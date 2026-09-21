@@ -27,7 +27,8 @@ AtomicQueue is a production-grade, multi-tenant appointment booking platform tha
 ## Prerequisites
 - Node.js = 20 (npm 11.x)
 - MongoDB replica-set (MongoDB Atlas recommended)
-- Redis instance (ediss:// URL)
+- Redis instance (
+ediss:// URL)
 
 ## Setup
 `ash
@@ -37,7 +38,7 @@ npm install               # install all workspaces
 cp .env.example apps/api/.env   # configure environment variables
 # edit .env with MONGODB_URI, REDIS_URL, SESSION_COOKIE_SECRET, etc.
 `
-.env is git-ignored – never commit real credentials.
+.env is git-ignored ï¿½ never commit real credentials.
 
 ## Running Locally
 `ash
@@ -70,9 +71,13 @@ The API serves the built frontend, providing a single-origin production deployme
 4. Open a pull request with a clear description.
 
 ## License
-MIT License – see [LICENSE](./LICENSE).
+MIT License ï¿½ see [LICENSE](./LICENSE).
 
 ## Roadmap
 - Phase?6: Multi-provider matching & advanced wait-list heuristics
 - Phase?7: Public OpenAPI spec and SDKs
 - Phase?8: Full CI/CD pipeline with automated rollout
+
+
+
+This is just a testing for checking something regarding github project
