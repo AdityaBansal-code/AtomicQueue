@@ -137,7 +137,6 @@ export interface ConfirmBookingInput {
    */
   createdBy: string | null;
 
-  /**
   sessionId: string;
 
   /** Required to claim a slot reserved for a waitlist entry. */

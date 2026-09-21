@@ -476,6 +476,7 @@ function BookingDialog({
   bucket,
   onClose,
   onSlotLost,
+  waitlistToken,
 }: {
   slug: string
   sessionId: string
