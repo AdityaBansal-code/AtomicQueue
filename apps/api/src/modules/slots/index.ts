@@ -24,6 +24,8 @@ export {
   emitBulkSlotUpdates,
   releaseExistingHoldForSession,
   emitBookingConfirmationUpdate,
+  reserveSlotForWaitlist,
+  releaseWaitlistReservation,
   type GenerateSlotsOptions,
   type GenerateSlotsResult,
   type ListSlotsFilter,

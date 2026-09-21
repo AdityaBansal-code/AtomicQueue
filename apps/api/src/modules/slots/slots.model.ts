@@ -38,6 +38,10 @@ export interface SlotDocument {
   holdVersion: string | null;
   /** Identifies which session currently holds this slot, to enforce one hold per session. */
   heldBySessionId: string | null;
+  /** If reserved for a waitlist entry, the entry ID. */
+  reservedForWaitlistEntryId: string | null;
+  /** Secure unguessable token required to claim this reserved slot. */
+  reservedForWaitlistToken: string | null;
   /** Optimistic-concurrency counter for non-booking edits; unused by this module. */
   version: number;
 }
@@ -94,6 +98,16 @@ const slotSchema = new Schema<SlotDocument>(
     },
 
     heldBySessionId: {
+      type: String,
+      default: null,
+    },
+
+    reservedForWaitlistEntryId: {
+      type: String,
+      default: null,
+    },
+
+    reservedForWaitlistToken: {
       type: String,
       default: null,
     },

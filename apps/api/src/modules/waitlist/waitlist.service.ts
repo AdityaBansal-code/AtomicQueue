@@ -1,6 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import { AppError } from '../../lib/Apperror.js';
+import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
-import { getSlotById } from '../slots/index.js';
+import { getSlotById, reserveSlotForWaitlist, releaseWaitlistReservation } from '../slots/index.js';
+import { getBusinessById } from '../tenants/index.js';
 import { sendEmail } from '../notifications/index.js';
 import {
   WaitlistEntryModel,
@@ -232,6 +235,12 @@ export async function expireWaitlistEntry(
     .select({ _id: 1 })
     .lean();
 
+  const releasedSlot = await releaseWaitlistReservation(entryId);
+  if (releasedSlot) {
+    // Pass it to the next person in line
+    void notifyNextWaitlistEntry(releasedSlot.businessId, releasedSlot.slotId);
+  }
+
   return Boolean(result);
 }
 
@@ -260,10 +269,17 @@ export async function notifyNextWaitlistEntry(
     const marked = await markWaitlistEntryNotified(candidate.id);
     if (!marked) return;
 
+    const token = randomBytes(32).toString('base64url');
+    const reserved = await reserveSlotForWaitlist(businessId, slotId, marked.id, token);
+    if (!reserved) return;
+
+    const business = await getBusinessById(businessId);
+    if (!business) return;
+
     await sendEmail({
       to: marked.customer.contact,
       subject: 'A slot just opened up',
-      text: "Good news — a slot you're waiting for is available again. Book it soon before it's taken.",
+      text: `Good news — a slot you're waiting for is available again. Book it soon before it's taken: ${env.FRONTEND_URL}/b/${business.slug}?waitlistToken=${token}`,
     });
   } catch (error) {
     logger.warn({ err: error, businessId, slotId }, 'waitlist notify failed');

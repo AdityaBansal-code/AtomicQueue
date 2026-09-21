@@ -1002,6 +1002,7 @@ export async function claimSlot(
   serviceId: string,
   datetime: Date | string,
   sessionId: string,
+  waitlistToken?: string,
 ): Promise<ClaimSlotResult> {
   const parsedDatetime = new Date(datetime);
 
@@ -1025,6 +1026,20 @@ export async function claimSlot(
       serviceId,
       datetime: parsedDatetime,
       status: 'available',
+      ...(waitlistToken
+        ? {
+            $or: [
+              { reservedForWaitlistToken: null },
+              { reservedForWaitlistToken: { $exists: false } },
+              { reservedForWaitlistToken: waitlistToken },
+            ],
+          }
+        : {
+            $or: [
+              { reservedForWaitlistToken: null },
+              { reservedForWaitlistToken: { $exists: false } },
+            ],
+          }),
     },
     {
       status: 'held',
@@ -1368,4 +1383,43 @@ export async function releaseExistingHoldForSession(
   });
 
   return { slotId, holdVersion };
+}
+
+export async function reserveSlotForWaitlist(
+  businessId: string,
+  slotId: string,
+  entryId: string,
+  token: string,
+): Promise<boolean> {
+  const slot = await SlotModel.findOneAndUpdate(
+    { _id: slotId, businessId, status: 'available' },
+    {
+      $set: {
+        reservedForWaitlistEntryId: entryId,
+        reservedForWaitlistToken: token,
+      },
+    },
+    { new: false },
+  ).lean();
+  return Boolean(slot);
+}
+
+export async function releaseWaitlistReservation(
+  entryId: string,
+): Promise<{ slotId: string; businessId: string } | null> {
+  const slot = await SlotModel.findOneAndUpdate(
+    { reservedForWaitlistEntryId: entryId },
+    {
+      $unset: {
+        reservedForWaitlistEntryId: 1,
+        reservedForWaitlistToken: 1,
+      },
+    },
+    { new: false },
+  )
+    .select({ _id: 1, businessId: 1 })
+    .lean();
+
+  if (!slot) return null;
+  return { slotId: String(slot._id), businessId: slot.businessId };
 }

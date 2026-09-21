@@ -138,10 +138,10 @@ export interface ConfirmBookingInput {
   createdBy: string | null;
 
   /**
-   * Server-side authenticated session id.
-   * Used to fence the Redis hold to the browser/session that created it.
-   */
   sessionId: string;
+
+  /** Required to claim a slot reserved for a waitlist entry. */
+  waitlistToken?: string;
 }
 
 export interface ConfirmBookingResult {
@@ -337,6 +337,7 @@ async function claimAndHold(
         input.serviceId,
         input.datetime,
         input.sessionId,
+        input.waitlistToken,
       );
     } catch (error: unknown) {
       if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 11000) {
@@ -571,6 +572,7 @@ export interface HoldSlotForCustomerInput {
   serviceId: string;
   datetime: Date | string;
   sessionId: string;
+  waitlistToken?: string;
 }
 
 export interface HoldSlotForCustomerResult {

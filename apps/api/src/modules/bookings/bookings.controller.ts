@@ -55,6 +55,7 @@ export const holdCustomerBookingSchema = z.object({
   serviceId: z.string().trim().min(1, 'Service is required.'),
   datetime: z.string().trim().min(1, 'Date/time is required.'),
   sessionId: z.string().trim().min(8, 'A session id is required.'),
+  waitlistToken: z.string().optional(),
 });
 
 /** Body schema for the anonymous customer confirm step (`POST /api/bookings/confirm`). */
@@ -153,6 +154,7 @@ export const holdCustomerBookingController = asyncHandler(async (req, res) => {
     serviceId: req.body.serviceId,
     datetime: req.body.datetime,
     sessionId: req.body.sessionId,
+    waitlistToken: req.body.waitlistToken,
   });
 
   res.status(201).json({ data: result });

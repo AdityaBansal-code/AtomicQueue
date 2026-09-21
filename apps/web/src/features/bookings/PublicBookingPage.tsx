@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CalendarOff, CheckCircle2, Clock } from 'lucide-react'
 
 import { apiFetch, ApiRequestError } from '@/lib/api'
@@ -67,7 +67,9 @@ function bucketKey(b: { providerId: string; datetime: string }): string {
  */
 export function PublicBookingPage() {
   const { slug } = useParams<{ slug: string }>()
+  const [searchParams] = useSearchParams()
   const [sessionId] = useState(getBookingSessionId)
+  const waitlistToken = searchParams.get('waitlistToken')
 
   const [business, setBusiness] = useState<PublicBusiness | null>(null)
   const [businessError, setBusinessError] = useState<string | null>(null)
@@ -451,6 +453,7 @@ export function PublicBookingPage() {
             void loadAvailability()
             setWaitlistFor(b)
           }}
+          waitlistToken={waitlistToken}
         />
       )}
 
@@ -479,6 +482,7 @@ function BookingDialog({
   bucket: AvailabilityBucket
   onClose: () => void
   onSlotLost: (b: AvailabilityBucket) => void
+  waitlistToken?: string | null
 }) {
   const [step, setStep] = useState<BookingStep>('holding')
   const [error, setError] = useState<string | null>(null)
@@ -517,6 +521,7 @@ function BookingDialog({
             serviceId: bucket.serviceId,
             datetime: bucket.datetime,
             sessionId,
+            waitlistToken: waitlistToken || undefined,
           }),
         })
         setHeldUntil(new Date(res.heldUntil).getTime())
