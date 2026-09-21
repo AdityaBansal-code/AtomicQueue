@@ -22,6 +22,7 @@ export {
   cancelFutureSlotsForProvider,
   blockAndCancelFutureSlotsForService,
   emitBulkSlotUpdates,
+  releaseExistingHoldForSession,
   emitBookingConfirmationUpdate,
   type GenerateSlotsOptions,
   type GenerateSlotsResult,

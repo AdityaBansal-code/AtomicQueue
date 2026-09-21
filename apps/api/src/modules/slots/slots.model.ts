@@ -36,6 +36,8 @@ export interface SlotDocument {
   status: SlotStatus;
   /** Fencing token for the hold/confirm flow. Non-null only while status is 'held'. */
   holdVersion: string | null;
+  /** Identifies which session currently holds this slot, to enforce one hold per session. */
+  heldBySessionId: string | null;
   /** Optimistic-concurrency counter for non-booking edits; unused by this module. */
   version: number;
 }
@@ -91,6 +93,11 @@ const slotSchema = new Schema<SlotDocument>(
       default: null,
     },
 
+    heldBySessionId: {
+      type: String,
+      default: null,
+    },
+
     version: {
       type: Number,
       required: true,
@@ -108,6 +115,18 @@ const slotSchema = new Schema<SlotDocument>(
 slotSchema.index(
   { businessId: 1, providerId: 1, providerType: 1, datetime: 1, unitIndex: 1 },
   { unique: true },
+);
+
+// Enforces one active hold per session within a business.
+slotSchema.index(
+  { businessId: 1, heldBySessionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: 'held',
+      heldBySessionId: { $type: 'string' },
+    },
+  },
 );
 
 // Speeds up the hot-path claim query.

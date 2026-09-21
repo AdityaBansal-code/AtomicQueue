@@ -700,7 +700,7 @@ async function bulkTransitionFutureSlots(
 
   await SlotModel.updateMany(
     { ...match, datetime: { $gte: now }, status: 'held' },
-    { $set: { status: 'cancelled' }, $unset: { holdVersion: 1 } },
+    { $set: { status: 'cancelled' }, $unset: { holdVersion: 1, heldBySessionId: 1 } },
     { session },
   );
 
@@ -1001,6 +1001,7 @@ export async function claimSlot(
   providerType: ProviderType,
   serviceId: string,
   datetime: Date | string,
+  sessionId: string,
 ): Promise<ClaimSlotResult> {
   const parsedDatetime = new Date(datetime);
 
@@ -1028,6 +1029,7 @@ export async function claimSlot(
     {
       status: 'held',
       holdVersion,
+      heldBySessionId: sessionId,
     },
     { new: true },
   )
@@ -1109,6 +1111,7 @@ export async function releaseHeldSlot(
       },
       $unset: {
         holdVersion: 1,
+        heldBySessionId: 1,
       },
     },
     {
@@ -1319,6 +1322,7 @@ export async function confirmHeldSlot(
       },
       $unset: {
         holdVersion: 1,
+        heldBySessionId: 1,
       },
     },
     {
@@ -1332,3 +1336,36 @@ export async function confirmHeldSlot(
   return Boolean(slot);
 }
 
+export async function releaseExistingHoldForSession(
+  businessId: string,
+  sessionId: string,
+): Promise<{ slotId: string; holdVersion: string } | null> {
+  const slot = await SlotModel.findOneAndUpdate(
+    {
+      businessId,
+      heldBySessionId: sessionId,
+      status: 'held',
+    },
+    {
+      $set: { status: 'available' },
+      $unset: { holdVersion: 1, heldBySessionId: 1 },
+    },
+    { new: false },
+  )
+    .select({ _id: 1, holdVersion: 1 })
+    .lean();
+
+  if (!slot) {
+    return null;
+  }
+
+  const slotId = String(slot._id);
+  const holdVersion = slot.holdVersion as string;
+
+  emitSlotUpdate(businessId, {
+    slotId,
+    status: 'available',
+  });
+
+  return { slotId, holdVersion };
+}

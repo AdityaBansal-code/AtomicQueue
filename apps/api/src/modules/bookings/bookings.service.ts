@@ -21,6 +21,7 @@ import {
   emitBookingConfirmationUpdate,
   getSlotById,
   listHeldSlotsForBucket,
+  releaseExistingHoldForSession,
 } from '../slots/index.js';
 import { notifyNextWaitlistEntry } from '../waitlist/index.js';
 
@@ -313,14 +314,40 @@ async function claimAndHold(
   slotId: string;
   holdVersion: string;
 }> {
+  const oldHold = await releaseExistingHoldForSession(
+    input.businessId,
+    input.sessionId,
+  );
+
+  if (oldHold) {
+    try {
+      await deleteRedisHold(oldHold.slotId, input.sessionId, oldHold.holdVersion);
+    } catch {
+      // Best effort
+    }
+  }
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const claim = await claimSlot(
-      input.businessId,
-      input.providerId,
-      input.providerType,
-      input.serviceId,
-      input.datetime,
-    );
+    let claim;
+    try {
+      claim = await claimSlot(
+        input.businessId,
+        input.providerId,
+        input.providerType,
+        input.serviceId,
+        input.datetime,
+        input.sessionId,
+      );
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 11000) {
+        throw new AppError(
+          409,
+          'SLOT_NOT_AVAILABLE',
+          'Another slot was held concurrently by this session.',
+        );
+      }
+      throw error;
+    }
 
     if (claim.ok) {
       const redisHoldCreated = await createRedisHold(
