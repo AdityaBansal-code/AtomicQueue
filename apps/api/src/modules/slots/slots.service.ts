@@ -366,6 +366,11 @@ export async function generateWeeklySlots(
         status: 'available',
       });
       result.created -= deleted.deletedCount ?? 0;
+    } else {
+      const { notifyNextWaitlistEntry } = await import('../waitlist/index.js');
+      for (const id of insertedIds) {
+        await notifyNextWaitlistEntry(businessId, String(id));
+      }
     }
   }
 
