@@ -224,7 +224,7 @@ async function claimAndHold(
 }> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const session = await mongoose.startSession();
-    let claim;
+    let claim: Awaited<ReturnType<typeof claimSlot>> | undefined;
     
     try {
       await session.withTransaction(async () => {
@@ -257,6 +257,10 @@ async function claimAndHold(
       throw error;
     }
     await session.endSession();
+
+    if (!claim) {
+      throw new Error('Transaction succeeded but claim was not set');
+    }
 
     if (claim.ok) {
       return {
