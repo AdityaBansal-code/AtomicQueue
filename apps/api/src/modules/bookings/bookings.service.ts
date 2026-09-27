@@ -152,10 +152,7 @@ export interface BookingServiceDependencies {
   mongoSession?: ClientSession;
 }
 
-interface RedisHold {
-  sessionId: string;
-  holdVersion: string;
-}
+
 
 export interface BookingListItem {
   id: string;
@@ -210,102 +207,14 @@ function normalizeContact(
     : normalized;
 }
 
-async function readRedisHold(
-  slotId: string,
-): Promise<RedisHold | null> {
-  const value = await redis.get(getHoldKey(slotId));
 
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(value);
-
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      !('sessionId' in parsed) ||
-      !('holdVersion' in parsed) ||
-      typeof parsed.sessionId !== 'string' ||
-      typeof parsed.holdVersion !== 'string'
-    ) {
-      return null;
-    }
-
-    return {
-      sessionId: parsed.sessionId,
-      holdVersion: parsed.holdVersion,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function createRedisHold(
-  slotId: string,
-  sessionId: string,
-  holdVersion: string,
-): Promise<boolean> {
-  const result = await redis.set(
-    getHoldKey(slotId),
-    JSON.stringify({
-      sessionId,
-      holdVersion,
-    }),
-    'EX',
-    HOLD_TTL_SECONDS,
-    'NX',
-  );
-
-  return result === 'OK';
-}
 
 /**
- * Deletes the Redis hold only if it still belongs to this exact
- * session + fencing token.
+ * Claim an available Mongo slot.
  *
- * This prevents one request from deleting a newer hold that reused
- * the same slot.
- */
-async function deleteRedisHold(
-  slotId: string,
-  sessionId: string,
-  holdVersion: string,
-): Promise<void> {
-  const key = getHoldKey(slotId);
-
-  const current = await redis.get(key);
-
-  if (!current) {
-    return;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(current);
-
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'sessionId' in parsed &&
-      'holdVersion' in parsed &&
-      parsed.sessionId === sessionId &&
-      parsed.holdVersion === holdVersion
-    ) {
-      await redis.del(key);
-    }
-  } catch {
-    // If the value is malformed, don't delete blindly.
-    // TTL cleanup will remove it.
-  }
-}
-
-/**
- * Claim an available Mongo slot and pair it with a Redis TTL hold.
- *
- * If claimSlot reports a held slot, we inspect Redis using the exact
- * Mongo fencing token. A missing/mismatched Redis hold means the Mongo
- * hold is stale, so we release it conditionally and retry once.
+ * If claimSlot reports a held slot, we inspect the slot's heldUntil date.
+ * A past heldUntil means the Mongo hold is stale, so we release it
+ * conditionally and retry once.
  */
 async function claimAndHold(
   input: ConfirmBookingInput,
@@ -313,18 +222,10 @@ async function claimAndHold(
   slotId: string;
   holdVersion: string;
 }> {
-  const oldHold = await releaseExistingHoldForSession(
+  await releaseExistingHoldForSession(
     input.businessId,
     input.sessionId,
   );
-
-  if (oldHold) {
-    try {
-      await deleteRedisHold(oldHold.slotId, input.sessionId, oldHold.holdVersion);
-    } catch {
-      // Best effort
-    }
-  }
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let claim;
@@ -350,25 +251,6 @@ async function claimAndHold(
     }
 
     if (claim.ok) {
-      const redisHoldCreated = await createRedisHold(
-        claim.slotId,
-        input.sessionId,
-        claim.holdVersion,
-      );
-
-      if (!redisHoldCreated) {
-        /*
-         * Mongo is already held. We deliberately do not perform an
-         * unsafe compensating write here. The fencing token makes the
-         * state recoverable by the normal stale-hold cleanup path.
-         */
-        throw new AppError(
-          500,
-          'SLOT_HOLD_FAILED',
-          'Unable to hold the selected slot. Please try again.',
-        );
-      }
-
       return {
         slotId: claim.slotId,
         holdVersion: claim.holdVersion,
@@ -386,15 +268,10 @@ async function claimAndHold(
     /*
      * SLOT_HELD:
      *
-     * We only release the Mongo hold if Redis does NOT contain the
-     * exact observed fencing token.
+     * We only release the Mongo hold if the heldUntil date is in the past.
      */
-    const redisHold = await readRedisHold(claim.slotId);
-
-    if (
-      redisHold &&
-      redisHold.holdVersion === claim.holdVersion
-    ) {
+    const heldUntil = claim.heldUntil;
+    if (heldUntil && heldUntil >= new Date()) {
       throw new AppError(
         409,
         'SLOT_NOT_AVAILABLE',
@@ -502,11 +379,7 @@ async function finalizeConfirmation(
       input.datetime,
     );
 
-    try {
-      await deleteRedisHold(slotId, input.sessionId, holdVersion);
-    } catch {
-      // Best effort — the Redis TTL removes it anyway.
-    }
+
 
     void enqueueNoShowScoring(bookingId).catch((error: unknown) => {
       logger.warn(
@@ -546,20 +419,8 @@ export async function confirmBooking(
 ): Promise<ConfirmBookingResult> {
   const { slotId, holdVersion } = await claimAndHold(input);
 
-  // Verify the Redis hold (authorization) before the transaction (§4).
-  const hold = await readRedisHold(slotId);
-
-  if (
-    !hold ||
-    hold.sessionId !== input.sessionId ||
-    hold.holdVersion !== holdVersion
-  ) {
-    throw new AppError(
-      409,
-      'SLOT_HOLD_EXPIRED',
-      'The slot hold has expired. Please select the slot again.',
-    );
-  }
+  // Authorization is already handled by finalizeConfirmation requiring the correct holdVersion.
+  // The holdVersion acts as a capability token for the hold.
 
   return finalizeConfirmation(slotId, holdVersion, input, dependencies);
 }
@@ -636,9 +497,8 @@ export async function confirmCustomerBooking(
   );
 
   for (const heldSlot of heldSlots) {
-    const hold = await readRedisHold(heldSlot.slotId);
-    if (hold && hold.sessionId === input.sessionId) {
-      return finalizeConfirmation(heldSlot.slotId, hold.holdVersion, {
+    if (heldSlot.heldBySessionId === input.sessionId) {
+      return finalizeConfirmation(heldSlot.slotId, heldSlot.holdVersion, {
         ...input,
         createdBy: null,
       });

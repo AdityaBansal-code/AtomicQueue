@@ -6,7 +6,7 @@
 export {
   generateWeeklySlots,
   listSlots,
-  listHeldSlots,
+  releaseExpiredHolds,
   listHeldSlotsForBucket,
   getSlotById,
   getAvailableSlots,

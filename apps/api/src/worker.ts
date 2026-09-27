@@ -7,8 +7,7 @@ import { JOBS_QUEUE_NAME, jobsQueue, queueConnection } from './lib/queue.js';
 import { listBusinessIds } from './modules/tenants/index.js';
 import {
   generateWeeklySlots,
-  listHeldSlots,
-  releaseHeldSlot,
+  releaseExpiredHolds,
 } from './modules/slots/index.js';
 import { sendEmail, type SendEmailInput } from './modules/notifications/index.js';
 import { runNoShowScoringJob } from './modules/noshow/index.js';
@@ -77,22 +76,7 @@ async function runProcessHoldExpiry(): Promise<void> {
   let releasedCount = 0;
 
   for (const businessId of businessIds) {
-    const heldSlots = await listHeldSlots(businessId);
-
-    for (const heldSlot of heldSlots) {
-      const stillHeldInRedis = await redis.exists(`hold:${heldSlot.id}`);
-      if (stillHeldInRedis) continue;
-
-      const released = await releaseHeldSlot(heldSlot.id, heldSlot.holdVersion);
-      // `false` means it already moved on (confirmed, or reclaimed under
-      // a newer holdVersion) between the read above and this write —
-      // nothing to do, not an error.
-      if (!released) continue;
-
-      releasedCount += 1;
-
-      await notifyNextWaitlistEntry(businessId, heldSlot.id);
-    }
+    releasedCount += await releaseExpiredHolds(businessId);
   }
 
   if (releasedCount > 0) {

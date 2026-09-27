@@ -36,6 +36,8 @@ export interface SlotDocument {
   status: SlotStatus;
   /** Fencing token for the hold/confirm flow. Non-null only while status is 'held'. */
   holdVersion: string | null;
+  /** When this hold expires. Non-null only while status is 'held'. */
+  heldUntil: Date | null;
   /** Identifies which session currently holds this slot, to enforce one hold per session. */
   heldBySessionId: string | null;
   /** If reserved for a waitlist entry, the entry ID. */
@@ -97,6 +99,11 @@ const slotSchema = new Schema<SlotDocument>(
       default: null,
     },
 
+    heldUntil: {
+      type: Date,
+      default: null,
+    },
+
     heldBySessionId: {
       type: String,
       default: null,
@@ -151,6 +158,9 @@ slotSchema.index({
   datetime: 1,
   status: 1,
 });
+
+// Speeds up bulk hold expiry processing
+slotSchema.index({ status: 1, heldUntil: 1 });
 
 /**
  * Mongoose model for slots. Only the Slots service layer touches

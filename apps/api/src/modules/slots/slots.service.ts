@@ -625,7 +625,7 @@ export async function listHeldSlotsForBucket(
   providerType: ProviderType,
   serviceId: string,
   datetime: Date | string,
-): Promise<{ slotId: string; holdVersion: string }[]> {
+): Promise<{ slotId: string; holdVersion: string; heldBySessionId: string | null }[]> {
   const parsedDatetime = new Date(datetime);
   if (Number.isNaN(parsedDatetime.getTime())) {
     return [];
@@ -639,7 +639,7 @@ export async function listHeldSlotsForBucket(
     datetime: parsedDatetime,
     status: 'held',
   })
-    .select({ _id: 1, holdVersion: 1 })
+    .select({ _id: 1, holdVersion: 1, heldBySessionId: 1 })
     .lean();
 
   return slots
@@ -650,6 +650,7 @@ export async function listHeldSlotsForBucket(
     .map((slot) => ({
       slotId: String(slot._id),
       holdVersion: slot.holdVersion,
+      heldBySessionId: slot.heldBySessionId ?? null,
     }));
 }
 
@@ -705,7 +706,7 @@ async function bulkTransitionFutureSlots(
 
   await SlotModel.updateMany(
     { ...match, datetime: { $gte: now }, status: 'held' },
-    { $set: { status: 'cancelled' }, $unset: { holdVersion: 1, heldBySessionId: 1 } },
+    { $set: { status: 'cancelled' }, $unset: { holdVersion: 1, heldBySessionId: 1, heldUntil: 1 } },
     { session },
   );
 
@@ -977,6 +978,7 @@ export type ClaimSlotResult =
       error: 'SLOT_HELD';
       slotId: string;
       holdVersion: string;
+      heldUntil: Date | null;
     };
 
 /**
@@ -1050,6 +1052,7 @@ export async function claimSlot(
       status: 'held',
       holdVersion,
       heldBySessionId: sessionId,
+      heldUntil: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes hold
     },
     { new: true },
   )
@@ -1079,7 +1082,7 @@ export async function claimSlot(
     datetime: parsedDatetime,
     status: 'held',
   })
-    .select({ _id: 1, holdVersion: 1 })
+    .select({ _id: 1, holdVersion: 1, heldUntil: 1 })
     .lean();
 
   if (heldSlot?.holdVersion) {
@@ -1088,6 +1091,7 @@ export async function claimSlot(
       error: 'SLOT_HELD',
       slotId: String(heldSlot._id),
       holdVersion: heldSlot.holdVersion,
+      heldUntil: heldSlot.heldUntil ?? null,
     };
   }
 
@@ -1132,6 +1136,7 @@ export async function releaseHeldSlot(
       $unset: {
         holdVersion: 1,
         heldBySessionId: 1,
+        heldUntil: 1,
       },
     },
     {
@@ -1270,6 +1275,7 @@ export async function rescheduleConfirmedSlots(
       },
       $unset: {
         holdVersion: 1,
+        heldUntil: 1,
       },
     },
     {
@@ -1343,6 +1349,7 @@ export async function confirmHeldSlot(
       $unset: {
         holdVersion: 1,
         heldBySessionId: 1,
+        heldUntil: 1,
       },
     },
     {
@@ -1368,7 +1375,7 @@ export async function releaseExistingHoldForSession(
     },
     {
       $set: { status: 'available' },
-      $unset: { holdVersion: 1, heldBySessionId: 1 },
+      $unset: { holdVersion: 1, heldBySessionId: 1, heldUntil: 1 },
     },
     { new: false },
   )
@@ -1427,4 +1434,54 @@ export async function releaseWaitlistReservation(
 
   if (!slot) return null;
   return { slotId: String(slot._id), businessId: slot.businessId };
+}
+
+export async function releaseExpiredHolds(businessId: string): Promise<number> {
+  const expiredHolds = await SlotModel.find({
+    businessId,
+    status: 'held',
+    heldUntil: { $lt: new Date() },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (expiredHolds.length === 0) {
+    return 0;
+  }
+
+  let releasedCount = 0;
+
+  for (const hold of expiredHolds) {
+    // Process one by one to avoid race conditions with confirmations
+    const released = await SlotModel.findOneAndUpdate(
+      {
+        _id: hold._id,
+        status: 'held',
+        heldUntil: { $lt: new Date() },
+      },
+      {
+        $set: { status: 'available' },
+        $unset: { holdVersion: 1, heldBySessionId: 1, heldUntil: 1 },
+      },
+      { new: false },
+    )
+      .select({ _id: 1 })
+      .lean();
+
+    if (released) {
+      releasedCount += 1;
+      const slotId = String(released._id);
+
+      emitSlotUpdate(businessId, {
+        slotId,
+        status: 'available',
+      });
+
+      // Avoid circular dependency by dynamically importing
+      const { notifyNextWaitlistEntry } = await import('../waitlist/index.js');
+      void notifyNextWaitlistEntry(businessId, slotId);
+    }
+  }
+
+  return releasedCount;
 }
