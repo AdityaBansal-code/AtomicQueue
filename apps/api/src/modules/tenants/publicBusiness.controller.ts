@@ -17,6 +17,7 @@
 
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { getActiveServiceSummaryByBusiness } from '../services/index.js';
+import { redis } from '../../lib/redis.js';
 
 import {
   getBusinessBySlug,
@@ -134,6 +135,22 @@ export const getPublicBusinesses = asyncHandler(async (req, res) => {
   // ── search ─────────────────────────────────────────────────────────
   const q = firstQueryValue(req.query.q)?.slice(0, 100);
 
+  // ── cache ──────────────────────────────────────────────────────────
+  const cacheKey = 'cache:public:businesses:default';
+  const isDefaultQuery = !q && !cursor && limit === DEFAULT_LIMIT;
+
+  if (isDefaultQuery) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        res.status(200).json(JSON.parse(cached));
+        return;
+      }
+    } catch {
+      // ignore redis errors and fall back to db
+    }
+  }
+
   // ── page ───────────────────────────────────────────────────────────
   const serviceSummaries = await getActiveServiceSummaryByBusiness();
 
@@ -146,7 +163,7 @@ export const getPublicBusinesses = asyncHandler(async (req, res) => {
 
   const SERVICE_PREVIEW_LIMIT = 5;
 
-  res.status(200).json({
+  const responseData = {
     data: items.map((business) => {
       const summary = serviceSummaries.get(business.id);
       return {
@@ -162,5 +179,15 @@ export const getPublicBusinesses = asyncHandler(async (req, res) => {
       nextCursor: nextKey ? encodeCursor(nextKey) : null,
       hasMore,
     },
-  });
+  };
+
+  if (isDefaultQuery) {
+    try {
+      await redis.set(cacheKey, JSON.stringify(responseData), 'EX', 300);
+    } catch {
+      // ignore redis write errors
+    }
+  }
+
+  res.status(200).json(responseData);
 });

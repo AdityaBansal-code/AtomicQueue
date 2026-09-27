@@ -2,6 +2,7 @@ import { Types, type ClientSession } from "mongoose";
 
 import type { Business } from "@queueless/shared-types";
 
+import { redis } from "../../lib/redis.js";
 import { BusinessModel } from "./tenants.model.js";
 
 export interface CreateBusinessInput {
@@ -73,6 +74,12 @@ export async function createBusiness(
     ],
     { session },
   );
+
+  try {
+    await redis.del('cache:public:businesses:default');
+  } catch {
+    // ignore
+  }
 
   return toBusiness(business);
 }
@@ -270,6 +277,12 @@ export async function updateBusiness(
 
   if (!business) {
     return null;
+  }
+
+  try {
+    await redis.del('cache:public:businesses:default');
+  } catch {
+    // ignore
   }
 
   return toBusiness(business);

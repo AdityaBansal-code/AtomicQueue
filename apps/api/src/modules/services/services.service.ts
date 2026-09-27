@@ -1,6 +1,7 @@
 import mongoose, { type ClientSession } from 'mongoose';
 
 import type { Service } from '@queueless/shared-types';
+import { redis } from '../../lib/redis.js';
 
 import {
   blockAndCancelFutureSlotsForService,
@@ -34,6 +35,10 @@ export async function createService(
     durationMinutes: input.durationMinutes,
     price: input.price,
   });
+
+  try {
+    await redis.del('cache:public:businesses:default');
+  } catch {}
 
   return {
     id: String(service._id),
@@ -102,6 +107,10 @@ export async function updateService(
   if (!service) {
     return null;
   }
+
+  try {
+    await redis.del('cache:public:businesses:default');
+  } catch {}
 
   return {
     id: String(service._id),
@@ -188,6 +197,10 @@ export async function deactivateService(
 
     // Post-commit only.
     emitBulkSlotUpdates(businessId, affected);
+
+    try {
+      await redis.del('cache:public:businesses:default');
+    } catch {}
 
     return result;
   } finally {

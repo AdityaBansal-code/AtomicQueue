@@ -1010,6 +1010,7 @@ export async function claimSlot(
   datetime: Date | string,
   sessionId: string,
   waitlistToken?: string,
+  session?: ClientSession,
 ): Promise<ClaimSlotResult> {
   const parsedDatetime = new Date(datetime);
 
@@ -1054,7 +1055,7 @@ export async function claimSlot(
       heldBySessionId: sessionId,
       heldUntil: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes hold
     },
-    { new: true },
+    { new: true, session },
   )
     .select({ _id: 1 })
     .lean();
@@ -1366,6 +1367,7 @@ export async function confirmHeldSlot(
 export async function releaseExistingHoldForSession(
   businessId: string,
   sessionId: string,
+  session?: ClientSession,
 ): Promise<{ slotId: string; holdVersion: string } | null> {
   const slot = await SlotModel.findOneAndUpdate(
     {
@@ -1377,7 +1379,7 @@ export async function releaseExistingHoldForSession(
       $set: { status: 'available' },
       $unset: { holdVersion: 1, heldBySessionId: 1, heldUntil: 1 },
     },
-    { new: false },
+    { new: false, session },
   )
     .select({ _id: 1, holdVersion: 1 })
     .lean();

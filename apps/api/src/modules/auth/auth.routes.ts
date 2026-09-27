@@ -11,28 +11,29 @@ import {
 
 import { authenticate } from './authenticate.js';
 import { validate } from '../../middleware/validate.js';
-import { rateLimit } from '../../lib/rateLimit.js';
+import { rateLimit } from 'express-rate-limit';
 
 const router = Router();
 
-/**
- * Per-IP cap on the one public unauthenticated *write* on the auth
- * surface. `login` is already bounded by its own per-account / per-IP
- * failure limits (auth.rateLimit.ts); `signup` had nothing, so a script
- * could create businesses + owner users unbounded. Generous enough that
- * a real person (or a workshop behind one NAT) never notices; fails open
- * so a Redis blip can't block legitimate signups.
- */
-const signupRateLimit = rateLimit({
-  keyPrefix: 'rl:auth:signup',
-  limit: 10,
-  windowSeconds: 60,
-  onRedisError: 'open',
+const signupRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many requests, please try again later.' } }
+});
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many requests, please try again later.' } }
 });
 
 router.get('/status', getAuthStatus);
-router.post('/signup', signupRateLimit, validate(signupSchema), signupOwnerController);
-router.post('/login', validate(loginSchema), loginController);
+router.post('/signup', signupRateLimiter, validate(signupSchema), signupOwnerController);
+router.post('/login', loginRateLimiter, validate(loginSchema), loginController);
 router.post('/logout', authenticate, logoutController);
 router.post('/logout-everywhere', authenticate, logoutEverywhereController);
 

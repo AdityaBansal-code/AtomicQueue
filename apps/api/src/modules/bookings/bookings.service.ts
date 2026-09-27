@@ -222,24 +222,31 @@ async function claimAndHold(
   slotId: string;
   holdVersion: string;
 }> {
-  await releaseExistingHoldForSession(
-    input.businessId,
-    input.sessionId,
-  );
-
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const session = await mongoose.startSession();
     let claim;
+    
     try {
-      claim = await claimSlot(
-        input.businessId,
-        input.providerId,
-        input.providerType,
-        input.serviceId,
-        input.datetime,
-        input.sessionId,
-        input.waitlistToken,
-      );
+      await session.withTransaction(async () => {
+        await releaseExistingHoldForSession(
+          input.businessId,
+          input.sessionId,
+          session,
+        );
+
+        claim = await claimSlot(
+          input.businessId,
+          input.providerId,
+          input.providerType,
+          input.serviceId,
+          input.datetime,
+          input.sessionId,
+          input.waitlistToken,
+          session,
+        );
+      });
     } catch (error: unknown) {
+      await session.endSession();
       if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 11000) {
         throw new AppError(
           409,
@@ -249,6 +256,7 @@ async function claimAndHold(
       }
       throw error;
     }
+    await session.endSession();
 
     if (claim.ok) {
       return {

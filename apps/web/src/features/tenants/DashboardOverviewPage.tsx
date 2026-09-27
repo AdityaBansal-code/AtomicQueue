@@ -10,6 +10,15 @@ import {
   Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 
 import type { Service } from '@queueless/shared-types'
 
@@ -238,7 +247,10 @@ export function DashboardOverviewPage() {
         <StatCard icon={Users} label="Team" value={stats?.teamSize} />
       </div>
 
-      <TodayUtilizationCard today={stats?.today} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <BookingOverviewCard stats={stats} />
+        <TodayUtilizationCard today={stats?.today} />
+      </div>
 
       <BusinessSettingsCard
         business={business}
@@ -279,6 +291,75 @@ function StatCard({
             <p className="mt-0.5 text-xs text-muted-foreground/80">{hint}</p>
           )}
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function BookingOverviewCard({ stats }: { stats: Stats | null }) {
+  const data = stats
+    ? [
+        { name: 'Completed', count: stats.completedCount },
+        { name: 'Today', count: stats.todayCount },
+        { name: 'Upcoming', count: stats.upcomingCount },
+      ]
+    : []
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pipeline Overview</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {stats === null ? (
+          <Skeleton className="h-[200px] w-full" />
+        ) : (
+          <div className="h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="hsl(var(--border))"
+                />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  dy={10}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  cursor={{ fill: 'hsl(var(--muted)/0.3)' }}
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid hsl(var(--border))',
+                    backgroundColor: 'hsl(var(--card))',
+                    color: 'hsl(var(--card-foreground))',
+                    fontSize: '12px',
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)'
+                  }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                />
+                <Bar
+                  dataKey="count"
+                  fill="hsl(var(--primary))"
+                  radius={[4, 4, 0, 0]}
+                  barSize={40}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

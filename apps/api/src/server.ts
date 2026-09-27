@@ -20,12 +20,11 @@ const app = express();
 const httpServer = createServer(app);
 const port = Number(env.PORT || 4000);
 
-// Trusts the first hop's X-Forwarded-For (a single reverse proxy/load
-// balancer in front of this process, e.g. Render/Railway/nginx). Without
-// this, req.ip resolves to the proxy's own address for every request,
+// Trusts two proxies (Vercel edge -> Render load balancer). Without
+// this, req.ip resolves to Vercel's own address for every request,
 // which silently breaks every per-IP rate limiter (magic-link resend,
 // login, public booking) since every caller looks like the same IP.
-app.set('trust proxy', 1);
+app.set('trust proxy', 2);
 
 // helmet's default CSP assumes an API-only origin. When this process
 // also serves the built SPA (architecture doc §14, below), the bundled
