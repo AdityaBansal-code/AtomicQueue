@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:match*",
+      "destination": "https://atomicqueue-api.onrender.com/api/:match*"
+    },
+    {
+      "source": "/socket.io/:match*",
+      "destination": "https://atomicqueue-api.onrender.com/socket.io/:match*"
+    }
+  ]
+}
