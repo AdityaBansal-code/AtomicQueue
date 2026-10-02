@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "worker": "tsx watch src/worker.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/worker.js & node dist/server.js"
   },
   "dependencies": {
     "@queueless/shared-types": "*",
